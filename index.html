@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+    <title>SceneLayerView - query statistics by geometry | Sample | ArcGIS API for JavaScript 4.23</title>
+    <style>
+      html,
+      body,
+      #viewDiv {
+        padding: 0;
+        margin: 0;
+        height: 100%;
+        width: 100%;
+		z-index: -1;
+      }
+	  #viewDiv1{
+		  position: absolute;
+		  padding: 0;
+		  top: 0;
+		  right: 320px;
+		  z-index: 3;
+		  opacity: 0.8;
+		  height: 180px;
+		  width: 220px;
+	  }
+	  
+	  .scale{
+	  			position: absolute;
+	  			bottom: 20px;
+	  			left: 15px;
+	  			width: 500px;
+	  			height: 50px;
+	  			background: wheat;
+	  			z-index: 3;
+	  			border-radius: 2px;
+	  			padding: 3px;
+	  	  }
+	  
+	  #infoDiv {
+	    position: absolute;
+	    top: 15px;
+	    left: 60px;
+	  }
+	  
+	  #infoDiv input {
+	    border: none;
+	    box-shadow: rgba(0, 0, 0, 0.3) 0px 1px 2px;
+	  }
+
+      .esri-ui-top-right {
+        max-height: 100%;
+      }
+
+      #queryDiv,
+      #resultDiv {
+        min-width: 250px;
+        font-size: 14px;
+        padding: 10px;
+        display: none;
+        overflow-y: auto;
+        overflow-x: hidden;
+      }
+
+      .geometry-options {
+        display: flex;
+        flex-direction: row;
+      }
+      .geometry-button {
+        flex: 1;
+        border-style: solid;
+        border-width: 1px;
+        border-image: none;
+      }
+      .geometry-button-selected {
+        background: #4c4c4c;
+        color: #fff;
+      }
+
+      #bufferNum {
+        width: 90%;
+        margin: 2.5em auto 0;
+      }
+
+      .count {
+        white-space: nowrap;
+        font-size: 14px;
+        font-weight: bold;
+        display: inline-block;
+      }
+	  .esri-elevation-profile.esri-component.esri-widget--panel {
+	          width: 350px !important;
+			  height: 150px;
+	        }
+    </style>
+    <!-- Load the Chart.js library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.8.0/Chart.min.js"></script>
+
+    <link rel="stylesheet" href="https://js.arcgis.com/4.23/esri/themes/light/main.css" />
+    <script src="https://js.arcgis.com/4.23/"></script>
+
+    <script>
+      require([
+		  "esri/config",
+		  "esri/Map",
+        "esri/WebScene",
+		"esri/views/MapView",
+        "esri/views/SceneView",
+        "esri/layers/GraphicsLayer",
+        "esri/widgets/Sketch/SketchViewModel",
+        "esri/widgets/Slider",
+        "esri/geometry/geometryEngine",
+        "esri/Graphic",
+        "esri/core/promiseUtils",
+		"esri/layers/GeoJSONLayer",
+		"esri/widgets/Legend",
+		"esri/widgets/ElevationProfile",
+		"esri/WebMap"
+      ], (esriConfig,Map,WebScene,MapView, SceneView, GraphicsLayer, SketchViewModel, Slider, geometryEngine, Graphic, promiseUtils,GeoJSONLayer,Legend,ElevationProfile,WebMap) => {
+        // Load webscene and display it in a SceneView
+        // const webscene = new WebScene({
+        //   portalItem: {
+        //     id: "fb5948b2bb76439792786000b942e5b7"
+        //   }
+        // });
+		
+		esriConfig.apiKey =
+				"AAPKaa7a14329b3c440e9b77dc031516814e42ak8XAKM4wZV6rG4isHZO0G0ROqTisDiRM524tTvtVb93hC3Pn2RvIwpjverny5";
+		
+		// const switchButton = document.getElementById("switch-btn");
+		
+		// const appConfig = {
+		//   mapView: null,
+		//   sceneView: null,
+		//   activeView: null,
+		//   container: "viewDiv" // 存放视图器的div容器id
+		// };
+	
+		
+		var building3dSymbol = {
+		    type: "polygon-3d",
+		    symbolLayers: [{
+		        type: "extrude",
+		        material: {
+		            color: "#FFFF00"
+		        },
+		        edges: {
+		            type: "solid",
+		            color: "#FF0000",
+		            size: 1.5
+		        }
+		    }]
+		};
+		
+		// 简单符号化渲染器（单一符号化）
+		var simpleRenderer = {
+		    type: "simple",
+		    symbol: building3dSymbol,
+		    visualVariables: [{
+		        type: "size",
+		        field: "length",
+		        valueUnit: "meters"
+		    }]
+		};
+		
+		function getSymbol(color) {
+		    return {
+		        type: "polygon-3d", 			// autocasts as new PolygonSymbol3D()
+		        symbolLayers: [{
+		            type: "extrude", 			// autocasts as new ExtrudeSymbol3DLayer()
+		            material: {
+		                color: color
+		            },
+		            edges: {
+		                type: "solid",
+		                color: "#999",
+		                size: 0.5
+		            }
+		        }]
+		    };
+		}
+		
+		/*****************************************************************
+		 * Set each unique value directly in the renderer's constructor.
+		 * At least one field must be used (in this case the "DESCLU" field).
+		 * The label property of each unique value will be used to indicate
+		 * the field value and symbol in the legend.
+		 *
+		 * The size visual variable sets the height of each building as it
+		 * exists in the real world according to the "ELEVATION" field.
+		 *****************************************************************/
+		// 唯一值渲染：不同字段取值采用不同颜色的符号进行渲染，这里我们用的是type字段的取值进行区分
+		const uniqueValueRenderer = {
+		    type: "unique-value", 					// autocasts as new UniqueValueRenderer()
+		    defaultSymbol: getSymbol("#aa55ff"),
+		    defaultLabel: "其他用地建筑物",
+		    field: "type",
+		    uniqueValueInfos: [{
+		        value: "office",
+		        symbol: getSymbol("#A7C636"),
+		        label: "办公用地建筑物"
+		    }, {
+		        value: "block",
+		        symbol: getSymbol("#FC921F"),
+		        label: "文化用地建筑物"
+		    }, {
+		        value: "commercial",
+		        symbol: getSymbol("#ED5151"),
+		        label: "商业用地建筑物"
+		    }, {
+		        value: "tower",
+		        symbol: getSymbol("#149ECE"),
+		        label: "旅游用地建筑物"
+		    }, {
+		        value: "hall",
+		        symbol: getSymbol("#689E1A"),
+		        label: "政府用地建筑物"
+		    }, {
+		        value: "stadium",
+		        symbol: getSymbol("#26911A"),
+		        label: "公共服务用地建筑物"
+		    }, {
+		        value: "train_station",
+		        symbol: getSymbol("#B5261A"),
+		        label: "公共设施用地建筑物"
+		    }],
+		    visualVariables: [{
+		        type: "size",
+		        field: "length",
+		        valueUnit: "meters" 				// Converts and extrudes all data values in meters
+		    }]
+		};
+		
+		const uniqueValueRenderer1 = {
+		    type: "unique-value", 					// autocasts as new UniqueValueRenderer()
+		    defaultSymbol: {
+						type: "simple-fill", // autocasts as new SimpleLineSymbol()
+						color: "#30ffea",
+						style: "solid"},
+		    defaultLabel: "其他用地建筑物",
+		    field: "type",
+		    uniqueValueInfos: [{
+		        value: "office",
+		        symbol: {
+						type: "simple-fill", // autocasts as new SimpleLineSymbol()
+						color: "#A7C636",
+						style: "solid"},
+		        label: "办公用地建筑物"
+		    }, {
+		        value: "block",
+		        symbol: {
+						type: "simple-fill", // autocasts as new SimpleLineSymbol()
+						color: "#FC921F",
+						style: "solid"},
+		        label: "文化用地建筑物"
+		    }, {
+		        value: "commercial",
+		        symbol: {
+						type: "simple-fill", // autocasts as new SimpleLineSymbol()
+						color: "#ED5151",
+						style: "solid"},
+		        label: "商业用地建筑物"
+		    }, {
+		        value: "tower",
+		        symbol: {
+						type: "simple-fill", // autocasts as new SimpleLineSymbol()
+						color: "#149ECE",
+						style: "solid"},
+		        label: "旅游用地建筑物"
+		    }, {
+		        value: "hall",
+		        symbol: {
+						type: "simple-fill", // autocasts as new SimpleLineSymbol()
+						color: "#689E1A",
+						style: "solid"},
+		        label: "政府用地建筑物"
+		    }, {
+		        value: "stadium",
+		        symbol: {
+						type: "simple-fill", // autocasts as new SimpleLineSymbol()
+						color: "#26911A",
+						style: "solid"},
+		        label: "公共服务用地建筑物"
+		    }, {
+		        value: "train_station",
+		        symbol: {
+						type: "simple-fill", // autocasts as new SimpleLineSymbol()
+						color: "#B5261A",
+						style: "solid"},
+		        label: "公共设施用地建筑物"
+		    }],
+		    visualVariables: [{
+		        type: "size",
+		        field: "length",
+		        valueUnit: "meters" 				// Converts and extrudes all data values in meters
+		    }]
+		};
+		
+		
+		// Set the renderer on the layer
+		const buildingsLayer = new GeoJSONLayer({
+		    url: "http://localhost:8080/geoserver/lightweightGIS/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=lightweightGIS%3Ahubeibuildings2&maxFeatures=70000&outputFormat=application%2Fjson",
+		    // renderer: simpleRenderer,
+		    renderer: uniqueValueRenderer,
+		    elevationInfo: {
+		        mode: "on-the-ground"
+		    },
+		    popupTemplate: {
+		        title: "{name}",
+		        content: [{
+		            type: "fields",
+		            fieldInfos: [{
+		                fieldName: "objectid",
+		                label: "建筑物编号"
+		            }, {
+		                fieldName: "code",
+		                label: "建筑物编码"
+		            }, {
+		                fieldName: "name",
+		                label: "建筑物名称"
+		            }, {
+		                fieldName: "type",
+		                label: "建筑物类型"
+		            }, {
+		                fieldName: "length",
+		                label: "建筑物高度"
+		            }]
+		        }]
+		    },
+		    outFields: ["objectid", "code", "name", "type", "length","yearcomple","catagory"]
+		});
+		
+		const buildingsLayer1 = new GeoJSONLayer({
+		    url: "http://localhost:8080/geoserver/lightweightGIS/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=lightweightGIS%3Ahubeibuildings2&maxFeatures=70000&outputFormat=application%2Fjson",
+		    // renderer: simpleRenderer,
+		    renderer: uniqueValueRenderer1,
+		    popupTemplate: {
+		        title: "{name}",
+		        content: [{
+		            type: "fields",
+		            fieldInfos: [{
+		                fieldName: "objectid",
+		                label: "建筑物编号"
+		            }, {
+		                fieldName: "code",
+		                label: "建筑物编码"
+		            }, {
+		                fieldName: "name",
+		                label: "建筑物名称"
+		            }, {
+		                fieldName: "type",
+		                label: "建筑物类型"
+		            }, {
+		                fieldName: "length",
+		                label: "建筑物高度"
+		            }]
+		        }]
+		    }
+		});
+		
+		const map = new Map({
+		    basemap: "satellite",
+		    ground: "world-elevation",
+		    layers: [buildingsLayer]
+		});
+		
+		const map2D = new WebMap({
+          portalItem: {
+            id: "56b5bd522c52409c90d902285732e9f1"
+          }
+        });
+		
+		map2D.add(buildingsLayer1);
+		
+		
+		
+		const mapA = new Map({
+			basemap: "streets-night-vector"
+		});
+		
+		// const map_ = new Map({
+		//     basemap: "satellite",
+		//     ground: "world-elevation",
+		//     layers: [buildingsLayer]
+		// });
+		
+		// const map2D_ = new Map({
+		//     basemap: "streets"
+		// });
+		
+		const view2 = new MapView({
+		          container: "viewDiv1",
+		          map: map2D,
+		          constraints: {
+		            // Disable zoom snapping to get the best synchronization
+		            snapToZoom: false
+		          }
+		});
+
+		
+		const view = new SceneView({
+		    container: "viewDiv",
+		    map: map,
+		    camera: {
+		        position: {
+		            longitude: 114.355556,
+		            latitude: 30.53,
+		            z: 600,
+		            spatialReference: {
+		                wkid: 4326
+		            }
+		        },
+		        heading: 300,
+		        tilt: 55
+		    }
+		});
+		
+		view.on("pointer-move", function(evt) { //鼠标移动事件
+				view.hitTest(evt).then(function (respond){
+					let result = respond.results[0];
+					let lon = result.mapPoint.longitude.toFixed(2);
+					let lat = result.mapPoint.latitude.toFixed(2);
+					let text = "经度："+ lon + " 纬度：" + lat //标注内容
+					document.getElementById("coor").innerHTML=text;
+					// let textSymbol = new TextSymbol(text) //标注实例
+					// let textGraphic = new Graphic(point, textSymbol) //鼠标位置即标注点
+					// graphicLayer.add(textGraphic) //添加标注到地图
+				})
+		
+		
+			})
+		
+			view.when(function () {
+				view.on('double-click', function (evt) {
+					evt.stopPropagation();
+				});
+				view.on('mouse-wheel', function () {
+					//鼠标滚轮缩小
+					let scale = view.scale;
+					document.getElementById("scale").innerHTML=scale.toFixed(2);
+		
+				});
+			});
+		
+		// const legend2D = new Legend({
+		// 	view:view2
+		// });
+		// view2.ui.add(legend2D,"top-right");
+		
+		// view.ui.add(
+		//   [
+		//     new Expand({
+		//       view: view2,
+		//       content: new Legend({ view: view }),
+		//       group: "top-right",
+		//       expanded: true
+		//     })
+		//   ],
+		//   "top-right"
+		// );
+		
+		const elevationProfile = new ElevationProfile({
+		          view: view,
+		          // configure widget with desired profile lines
+		          profiles: [
+		            {
+		              type: "ground" // first profile line samples the ground elevation
+		            },
+		            {
+		              type: "view" // second profile samples the view and shows building profiles
+		            }
+		          ],
+		          // hide the select button
+		          // this button can be displayed when there are polylines in the
+		          // scene to select and display the elevation profile for
+		          visibleElements: {
+		            selectButton: false
+		          }
+		        });
+		
+		        // add the widget to the view
+		        view.ui.add(elevationProfile, "bottom-trailing");
+		
+		 
+				
+				
+		// const initialViewParams = {
+		// 	zoom: 12,
+		// 	center: [114.355556, 30.53],
+		//   container: appConfig.container
+		// };
+		
+
+		
+		
+		// // 创建二维视图器，并设置为当前视图器
+		// appConfig.sceneView = createView(initialViewParams, "3d");
+		// appConfig.sceneView.map = map;
+		// appConfig.activeView = appConfig.sceneView;
+		 
+		// // 创建三维视图器 但是不要初始化视图器的容器
+		// initialViewParams.container = null;
+		// initialViewParams.map = map2D;
+		// appConfig.mapView = createView(initialViewParams, "2d");
+		
+		
+		
+		
+		 
+		// // 切换二三维视图方法
+		// function switchView() {
+		//   const is2D = appConfig.activeView.type === "2d";
+		//   //首先克隆当前视图器的视点信息 
+		//   const activeViewpoint = appConfig.activeView.viewpoint.clone();
+		 
+		//   // 把当前视图器的容易移除
+		//   appConfig.activeView.container = null;
+		 
+		//   if (is2D) {
+		//     // if the input view is a SceneView, set the viewpoint on the
+		//     // mapView instance. Set the container on the mapView and flag
+		//     // it as the active view
+		// 	appConfig.sceneView.viewpoint = activeViewpoint;
+		// 	appConfig.sceneView.container = appConfig.container;
+		// 	appConfig.activeView = appConfig.sceneView;
+		// 	switchButton.value = "2D";
+		//   } else {
+		//     appConfig.mapView.viewpoint = activeViewpoint;
+		//     appConfig.mapView.container = appConfig.container;
+		//     appConfig.activeView = appConfig.mapView;
+		//     switchButton.value = "3D";
+		//   }
+		// }
+		
+		
+		
+		
+		// switchButton.addEventListener("click", () => {
+		//   switchView();
+		// });
+		
+		
+		 
+		
+		 
+		// // 根据参数创建视图器
+		// function createView(params, type) {
+		//   let view;
+		//   if (type === "2d") {
+		//     view = new MapView(params);
+		//   } else {
+		//     view = new SceneView(params);
+		//   }
+		//   return view;
+		// }
+		
+		const views = [view, view2];
+		let active;
+		 
+		const sync = (source) => {
+				if (!active || !active.viewpoint || active !== source) {
+				return;
+			}
+		 
+		    for (const view of views) {
+		        if (view !== active) {
+		              view.viewpoint = active.viewpoint;
+		            }
+		          }
+		};
+		 
+		        for (const view of views) {
+		          view.watch(["interacting", "animation"], () => {
+		            active = view;
+		            sync(active);
+		          });
+		 
+		          view.watch("viewpoint", () => sync(view));
+		        }
+				
+		
+		
+		// const legend = new Legend({
+		//     view: view
+		// });
+		
+		// legend.style = 'classic';
+		// legend.headingLevel = 5;
+		
+		// view.ui.add(legend, "bottom-right");
+        // create the SceneView
+        // const view = new SceneView({
+        //   container: "viewDiv",
+        //   map: webscene
+        // });
+		// wind
+  //       window.view = appConfig.sceneView;
+        // add a GraphicsLayer for the sketches and the buffer
+        const sketchLayer = new GraphicsLayer();
+        const bufferLayer = new GraphicsLayer();
+		
+		
+        view.map.addMany([bufferLayer, sketchLayer]);
+
+        let sceneLayer = null;
+        let sceneLayerView = null;
+        let bufferSize = 0;
+
+        // Assign scene layer once webscene is loaded and initialize UI
+        // webscene.load().then(() => {
+        //   sceneLayer = webscene.layers.find((layer) => {
+        //     return layer.title === "Helsinki textured buildings";
+        //   });
+		  sceneLayer = buildingsLayer;
+          sceneLayer.outFields = ["catagory", "yearcomple"];
+
+          view.whenLayerView(sceneLayer).then((layerView) => {
+            sceneLayerView = layerView;
+            queryDiv.style.display = "block";
+          });
+
+        view.ui.add([queryDiv], "top-right");
+        view.ui.add([resultDiv], "bottom-left");
+
+        // use SketchViewModel to draw polygons that are used as a query
+        let sketchGeometry = null;
+        const sketchViewModel = new SketchViewModel({
+          layer: sketchLayer,
+          defaultUpdateOptions: {
+            tool: "reshape",
+            toggleToolOnClick: false
+          },
+          view: view,
+          defaultCreateOptions: { hasZ: false }
+        });
+
+        sketchViewModel.on("create", (event) => {
+          if (event.state === "complete") {
+            sketchGeometry = event.graphic.geometry;
+            runQuery();
+          }
+        });
+
+        sketchViewModel.on("update", (event) => {
+          if (event.state === "complete") {
+            sketchGeometry = event.graphics[0].geometry;
+            runQuery();
+          }
+        });
+        // draw geometry buttons - use the selected geometry to sktech
+        const pointBtn = document.getElementById("point-geometry-button");
+        const lineBtn = document.getElementById("line-geometry-button");
+        const polygonBtn = document.getElementById("polygon-geometry-button");
+        pointBtn.addEventListener("click", geometryButtonsClickHandler);
+        lineBtn.addEventListener("click", geometryButtonsClickHandler);
+        polygonBtn.addEventListener("click", geometryButtonsClickHandler);
+        function geometryButtonsClickHandler(event) {
+          const geometryType = event.target.value;
+          clearGeometry();
+          sketchViewModel.create(geometryType);
+        }
+
+        const bufferNumSlider = new Slider({
+          container: "bufferNum",
+          min: 0,
+          max: 500,
+          steps: 1,
+          visibleElements: {
+            labels: true
+          },
+          precision: 0,
+          labelFormatFunction: (value, type) => {
+            return `${value.toString()}m`;
+          },
+          values: [0]
+        });
+        // get user entered values for buffer
+        bufferNumSlider.on(["thumb-change", "thumb-drag"], bufferVariablesChanged);
+        function bufferVariablesChanged(event) {
+          bufferSize = event.value;
+          runQuery();
+        }
+        // Clear the geometry and set the default renderer
+        const clearGeometryBtn = document.getElementById("clearGeometry");
+        clearGeometryBtn.addEventListener("click", clearGeometry);
+
+        // Clear the geometry and set the default renderer
+        function clearGeometry() {
+          sketchGeometry = null;
+          sketchViewModel.cancel();
+          sketchLayer.removeAll();
+          bufferLayer.removeAll();
+          clearHighlighting();
+          clearCharts();
+          resultDiv.style.display = "none";
+        }
+
+        // set the geometry query on the visible SceneLayerView
+        const debouncedRunQuery = promiseUtils.debounce(() => {
+          if (!sketchGeometry) {
+            return;
+          }
+
+          resultDiv.style.display = "block";
+          updateBufferGraphic(bufferSize);
+          return promiseUtils.eachAlways([queryStatistics(), updateSceneLayer()]);
+        });
+
+        function runQuery() {
+          debouncedRunQuery().catch((error) => {
+            if (error.name === "AbortError") {
+              return;
+            }
+
+            console.error(error);
+          });
+        }
+
+        // Set the renderer with objectIds
+        let highlightHandle = null;
+        function clearHighlighting() {
+          if (highlightHandle) {
+            highlightHandle.remove();
+            highlightHandle = null;
+          }
+        }
+
+        function highlightBuildings(objectIds) {
+          // Remove any previous highlighting
+          clearHighlighting();
+          const objectIdField = sceneLayer.objectIdField;
+          document.getElementById("count").innerHTML = objectIds.length;
+
+          highlightHandle = sceneLayerView.highlight(objectIds);
+        }
+
+        // update the graphic with buffer
+        function updateBufferGraphic(buffer) {
+          // add a polygon graphic for the buffer
+          if (buffer > 0) {
+            const bufferGeometry = geometryEngine.geodesicBuffer(sketchGeometry, buffer, "meters");
+            if (bufferLayer.graphics.length === 0) {
+              bufferLayer.add(
+                new Graphic({
+                  geometry: bufferGeometry,
+                  symbol: sketchViewModel.polygonSymbol
+                })
+              );
+            } else {
+              bufferLayer.graphics.getItemAt(0).geometry = bufferGeometry;
+            }
+          } else {
+            bufferLayer.removeAll();
+          }
+        }
+
+        function updateSceneLayer() {
+          const query = sceneLayerView.createQuery();
+          query.geometry = sketchGeometry;
+          query.distance = bufferSize;
+          return sceneLayerView.queryObjectIds(query).then(highlightBuildings);
+        }
+
+        let yearChart = null;
+        let materialChart = null;
+
+        function queryStatistics() {
+          const statDefinitions = [
+            {
+              onStatisticField: "CASE WHEN catagory = 'office' THEN 1 ELSE 0 END",
+              outStatisticFieldName: "office",
+              statisticType: "sum"
+            },
+            {
+              onStatisticField: "CASE WHEN catagory = 'block' THEN 1 ELSE 0 END",
+              outStatisticFieldName: "block",
+              statisticType: "sum"
+            },
+			{
+			  onStatisticField: "CASE WHEN catagory = 'commercial' THEN 1 ELSE 0 END",
+			  outStatisticFieldName: "commercial",
+			  statisticType: "sum"
+			},
+            {
+              onStatisticField: "CASE WHEN catagory = 'stadium' THEN 1 ELSE 0 END",
+              outStatisticFieldName: "stadium",
+              statisticType: "sum"
+            },
+            {
+              onStatisticField: "CASE WHEN catagory = 'tower' THEN 1 ELSE 0 END",
+              outStatisticFieldName: "tower",
+              statisticType: "sum"
+            },
+			{
+			  onStatisticField: "CASE WHEN catagory = 'hall' THEN 1 ELSE 0 END",
+			  outStatisticFieldName: "hall",
+			  statisticType: "sum"
+			},
+			{
+			  onStatisticField: "CASE WHEN catagory = 'train_station' THEN 1 ELSE 0 END",
+			  outStatisticFieldName: "train_station",
+			  statisticType: "sum"
+			},
+            {
+              onStatisticField:
+                "CASE WHEN catagory IN ('office', 'block', 'stadium', 'tower', 'commercial', 'hall','train_station') THEN 0 ELSE 1 END",
+              outStatisticFieldName: "other",
+              statisticType: "sum"
+            },
+            {
+              onStatisticField: "CASE WHEN (yearcomple >= '1850' AND yearcomple <= '1899') THEN 1 ELSE 0 END",
+              outStatisticFieldName: "year_1850",
+              statisticType: "sum"
+            },
+            {
+              onStatisticField: "CASE WHEN (yearcomple >= '1900' AND yearcomple <= '1924') THEN 1 ELSE 0 END",
+              outStatisticFieldName: "year_1900",
+              statisticType: "sum"
+            },
+            {
+              onStatisticField: "CASE WHEN (yearcomple >= '1925' AND yearcomple <= '1949') THEN 1 ELSE 0 END",
+              outStatisticFieldName: "year_1925",
+              statisticType: "sum"
+            },
+            {
+              onStatisticField: "CASE WHEN (yearcomple >= '1950' AND yearcomple <= '1974') THEN 1 ELSE 0 END",
+              outStatisticFieldName: "year_1950",
+              statisticType: "sum"
+            },
+            {
+              onStatisticField: "CASE WHEN (yearcomple >= '1975' AND yearcomple <= '1999') THEN 1 ELSE 0 END",
+              outStatisticFieldName: "year_1975",
+              statisticType: "sum"
+            },
+            {
+              onStatisticField: "CASE WHEN (yearcomple >= '2000' AND yearcomple <= '2022') THEN 1 ELSE 0 END",
+              outStatisticFieldName: "year_2000",
+              statisticType: "sum"
+            }
+          ];
+          const query = sceneLayerView.createQuery();
+          query.geometry = sketchGeometry;
+          query.distance = bufferSize;
+          query.outStatistics = statDefinitions;
+
+          return sceneLayerView.queryFeatures(query).then((result) => {
+            const allStats = result.features[0].attributes;
+			
+            updateChart(materialChart, [
+              allStats.office,
+              allStats.block,
+			  allStats.commercial,
+              allStats.stadium,
+              allStats.tower,
+			  allStats.hall,
+			  allStats.train_station,
+              allStats.other
+            ]);
+            updateChart(yearChart, [
+              allStats.year_1850,
+              allStats.year_1900,
+              allStats.year_1925,
+              allStats.year_1950,
+              allStats.year_1975,
+              allStats.year_2000
+            ]);
+          }, console.error);
+        }
+
+        // Updates the given chart with new data
+        function updateChart(chart, dataValues) {
+          chart.data.datasets[0].data = dataValues;
+          chart.update();
+        }
+
+        function createYearChart() {
+          const yearCanvas = document.getElementById("year-chart");
+          yearChart = new Chart(yearCanvas.getContext("2d"), {
+            type: "horizontalBar",
+            data: {
+              labels: ["1850-1899", "1900-1924", "1925-1949", "1950-1974", "1975-1999", "2000-2022"],
+              datasets: [
+                {
+                  label: "完工年份",
+                  backgroundColor: "#149dcf",
+                  stack: "Stack 0",
+                  data: [0, 0, 0, 0, 0, 0]
+                }
+              ]
+            },
+            options: {
+              responsive: false,
+              legend: {
+                display: false
+              },
+              title: {
+                display: true,
+                text: "完工年份"
+              },
+              scales: {
+                xAxes: [
+                  {
+                    stacked: true,
+                    ticks: {
+                      beginAtZero: true,
+                      precision: 0
+                    }
+                  }
+                ],
+                yAxes: [
+                  {
+                    stacked: true
+                  }
+                ]
+              }
+            }
+          });
+        }
+        function createMaterialChart() {
+          const materialCanvas = document.getElementById("material-chart");
+          materialChart = new Chart(materialCanvas.getContext("2d"), {
+            type: "doughnut",
+            data: {
+              labels: ["办公用地", "文化用地","商业用地", "体育场馆", "旅游景点","政府用地","公共设施", "其他"],
+              datasets: [
+                {
+                  backgroundColor: ["#A7C636", "#FC921F","#ED5151", "#26911A", "#149ECE", "#689E1A","#B5261A","#aa55ff"],
+                  borderWidth: 0,
+                  data: [0, 0, 0, 0, 0]
+                }
+              ]
+            },
+            options: {
+              responsive: false,
+              cutoutPercentage: 35,
+              legend: {
+                position: "bottom"
+              },
+              title: {
+                display: true,
+                text: "建筑类型"
+              }
+            }
+          });
+        }
+
+        function clearCharts() {
+          updateChart(materialChart, [0, 0, 0, 0, 0]);
+          updateChart(yearChart, [0, 0, 0, 0, 0, 0]);
+          document.getElementById("count").innerHTML = 0;
+        }
+
+        createYearChart();
+        createMaterialChart();
+      });
+    </script>
+  </head>
+
+  <body>
+	<div class="scale">
+	  	<h4 style="position: absolute;margin-left: 10px">比例尺</h4>
+	  	<h4 style="position: absolute;margin-left: 90px">1:</h4>
+	  	<h4 id="scale" style="position: absolute;margin-left: 110px"></h4>
+	  	<h4 id="coor" style="position: absolute;margin-left: 250px"></h4>
+	</div>
+    <div id="viewDiv" ></div>
+	<div id="viewDiv1"></div>
+    <div id="queryDiv" class="esri-widget">
+      <b>根据几何图形查询</b><br />
+      <br />绘制一个几何图形：:
+      <div class="geometry-options">
+        <button
+          class="esri-widget--button esri-icon-map-pin geometry-button"
+          id="point-geometry-button"
+          value="point"
+          title="按点选择"
+        ></button>
+        <button
+          class="esri-widget--button esri-icon-polyline geometry-button"
+          id="line-geometry-button"
+          value="polyline"
+          title="按折线选择"
+        ></button>
+        <button
+          class="esri-widget--button esri-icon-polygon geometry-button"
+          id="polygon-geometry-button"
+          value="polygon"
+          title="按多边形选择"
+        ></button>
+      </div>
+      <br />
+      <div class="tooltip">
+        <label for="bufferNum">设置buffer大小:</label>
+        <div id="bufferNum"></div>
+      </div>
+      <br />
+      <button class="esri-button" id="clearGeometry" type="button">清除</button>
+    </div>
+
+    <div id="resultDiv" class="esri-widget">
+      <div class="count">
+        选择的建筑：:
+        <div class="count" id="count">0</div>
+      </div>
+      <div class="charts">
+        <div>
+          <canvas id="year-chart" height="250" width="260" />
+        </div>
+        <div>
+          <canvas id="material-chart" width="250" height="300" />
+        </div>
+      </div>
+    </div>
+	<!-- <div id="infoDiv">
+	  <input
+	    type="button"
+	    id="switch-btn"
+	    value="2D"
+	  />
+	</div> -->
+  </body>
+</html>
