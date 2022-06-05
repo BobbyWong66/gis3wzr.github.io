@@ -299,7 +299,7 @@
 		
 		// Set the renderer on the layer
 		const buildingsLayer = new GeoJSONLayer({
-		    url: "http://localhost:8080/geoserver/lightweightGIS/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=lightweightGIS%3Ahubeibuildings2&maxFeatures=70000&outputFormat=application%2Fjson",
+		    url: "https://raw.githubusercontent.com/BobbyWong66/gis3wzr.github.io/main/feature.json",
 		    // renderer: simpleRenderer,
 		    renderer: uniqueValueRenderer,
 		    elevationInfo: {
@@ -331,7 +331,7 @@
 		});
 		
 		const buildingsLayer1 = new GeoJSONLayer({
-		    url: "http://localhost:8080/geoserver/lightweightGIS/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=lightweightGIS%3Ahubeibuildings2&maxFeatures=70000&outputFormat=application%2Fjson",
+		    url: "https://raw.githubusercontent.com/BobbyWong66/gis3wzr.github.io/main/feature.json",
 		    // renderer: simpleRenderer,
 		    renderer: uniqueValueRenderer1,
 		    popupTemplate: {
